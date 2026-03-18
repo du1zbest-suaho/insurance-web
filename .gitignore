@@ -1,9 +1,13 @@
-# Build output
-build/
-dist/
+# 100MB 초과 파일 (GitHub 제한)
+dist/insurance-extractor.zip
 
-# Runtime temp files
-temp/
+# Auto-memory
+memory/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
 
 # Auto-memory
 memory/
