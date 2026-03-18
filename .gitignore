@@ -1,0 +1,20 @@
+# Build output
+build/
+dist/
+
+# Runtime temp files
+temp/
+
+# Auto-memory
+memory/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+
+# IDE
+.vscode/
+*.suo
+*.user

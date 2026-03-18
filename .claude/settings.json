@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python d:/code/claudecsw/insurance-web/.claude/check_app_path.py && cd /d/code/claudecsw/insurance-web && python tests/run_tests.py 2>&1 || true",
+            "timeout": 120,
+            "statusMessage": "app/ 소스 변경 감지 — 테스트 실행 중..."
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>보험 사업방법서 추출기</title>
+<!-- TODO(Phase 5 build): Bootstrap CSS/JS 인라인 번들로 교체 (CDN 제거) -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+:root {
+  --c-match:#d4edda; --c-new:#cce5ff; --c-missing:#fff3cd; --c-fail:#f8d7da;
+}
+body { background:#f0f2f5; font-size:14px; }
+.card { border:1px solid #dee2e6; border-radius:8px; }
+.card-header { background:#fff; font-weight:600; border-bottom:1px solid #dee2e6;
+               padding:7px 14px; font-size:13px; }
+
+/* ── 드롭존 ── */
+.dz { border:2px dashed #adb5bd; border-radius:8px; padding:14px 10px;
+      text-align:center; cursor:pointer; transition:.15s; color:#6c757d; font-size:12px; }
+.dz:hover,.dz.over { background:#e8f4fd; border-color:#0d6efd; }
+
+/* ── 파일 칩 ── */
+.chip { display:inline-flex; align-items:center; gap:5px; background:#e9ecef;
+        border-radius:14px; padding:2px 9px; margin:2px; font-size:12px; }
+.chip .rm { cursor:pointer; color:#adb5bd; font-size:14px; line-height:1; }
+.chip .rm:hover { color:#dc3545; }
+
+/* ── 스텝 뱃지 ── */
+.sb { display:inline-block; padding:1px 7px; border-radius:10px;
+      font-size:11px; background:#e9ecef; color:#6c757d; margin:1px; white-space:nowrap; }
+.sb.active { background:#0d6efd; color:#fff; }
+.sb.done   { background:#198754; color:#fff; }
+.sb.error  { background:#dc3545; color:#fff; }
+
+/* ── 결과 테이블 ── */
+.table-sm td,.table-sm th { padding:4px 8px; vertical-align:middle; font-size:13px; }
+tr.r-done { background:var(--c-match); }
+tr.r-fail { background:var(--c-fail); }
+tr.r-new  { background:var(--c-new);  }
+tr.r-sel  { outline:2px solid #0d6efd; }
+
+/* ── 프리뷰 그리드 GT 색상 ── */
+.gt-match   { background:var(--c-match)!important; }
+.gt-new     { background:var(--c-new)!important; }
+.gt-missing { background:var(--c-missing)!important; font-style:italic; }
+
+/* ── 프리뷰 텍스트 ── */
+.prev-txt { font-family:monospace; font-size:12px; white-space:pre-wrap; line-height:1.5;
+            max-height:300px; overflow-y:auto; background:#f8f9fa; padding:10px;
+            border-radius:4px; border:1px solid #dee2e6; }
+.prev-txt mark { background:#fff176; padding:0; border-radius:2px; }
+
+/* ── 요약 카드 ── */
+.stat-card { text-align:center; padding:8px 0; }
+.stat-card .n { font-size:20px; font-weight:700; line-height:1.1; }
+.stat-card .l { font-size:11px; color:#6c757d; }
+
+/* ── GT 범례 ── */
+.legend-dot { display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:4px; }
+#warning-banner { display:none; }
+#elapsed { font-family:monospace; }
+.progress { height:5px; border-radius:3px; }
+</style>
+</head>
+<body>
+
+<div id="warning-banner" class="alert alert-warning mb-0 rounded-0 py-2 px-3">
+  <strong>⚠ 매핑 파일 미로드</strong> — 추출 시작 전 매핑 파일을 업로드하세요.
+</div>
+
+<div class="container-fluid p-3">
+
+<!-- 헤더 -->
+<div class="d-flex align-items-center justify-content-between mb-2">
+  <h6 class="mb-0 fw-bold">📋 보험 사업방법서 추출기</h6>
+  <div class="d-flex gap-2 align-items-center">
+    <span id="mapping-badge" class="badge bg-danger py-1">매핑 미로드</span>
+    <div id="gt-badges"></div>
+    <div id="tpl-badges"></div>
+  </div>
+</div>
+
+<!-- 요약 카드 -->
+<div class="row g-2 mb-2">
+  <div class="col"><div class="card stat-card"><div class="n" id="s-total">0</div><div class="l">총 파일</div></div></div>
+  <div class="col"><div class="card stat-card"><div class="n text-success" id="s-done">0</div><div class="l">PASS</div></div></div>
+  <div class="col"><div class="card stat-card"><div class="n text-danger" id="s-fail">0</div><div class="l">FAIL</div></div></div>
+  <div class="col"><div class="card stat-card"><div class="n text-info" id="s-new">0</div><div class="l">신규</div></div></div>
+  <div class="col"><div class="card stat-card"><div class="n text-danger" id="s-error">0</div><div class="l">오류</div></div></div>
+  <div class="col"><div class="card stat-card"><div class="n" id="s-proc">0</div><div class="l">처리중</div></div></div>
+  <div class="col d-flex align-items-center justify-content-center">
+    <span id="elapsed" class="text-muted" style="font-size:18px">00:00</span>
+  </div>
+</div>
+
+<!-- 메인 레이아웃 -->
+<div class="row g-2">
+
+  <!-- 좌측 패널 -->
+  <div class="col-md-4 d-flex flex-column gap-2">
+
+    <!-- 매핑 파일 -->
+    <div class="card">
+      <div class="card-header">🗂 매핑 파일 <span class="text-danger small">*필수</span></div>
+      <div class="card-body p-2">
+        <div class="dz" id="dz-m" onclick="g('inp-m').click()">
+          판매중_상품구성_사업방법서_매핑.xlsx<br><small>클릭 또는 드래그</small>
+        </div>
+        <input type="file" id="inp-m" accept=".xlsx" style="display:none" onchange="doMapping(this.files[0])">
+        <div id="m-name" class="mt-1 small text-success"></div>
+      </div>
+    </div>
+
+    <!-- GT 파일 (Phase 6) -->
+    <div class="card">
+      <div class="card-header">📊 GT 파일 <span class="text-muted small">(판매중_*.xlsx · 선택)</span></div>
+      <div class="card-body p-2">
+        <div class="dz" id="dz-gt" onclick="g('inp-gt').click()">
+          판매중_가입나이/보기납기/납입주기/보기개시나이정보.xlsx<br>
+          <small>복수 선택 가능 · 없으면 GT 비교 생략</small>
+        </div>
+        <input type="file" id="inp-gt" accept=".xlsx" multiple style="display:none" onchange="doGt(this.files)">
+        <div id="gt-chips" class="mt-1"></div>
+      </div>
+    </div>
+
+    <!-- 템플릿 파일 -->
+    <div class="card">
+      <div class="card-header">📄 템플릿 파일 <span class="text-muted small">(선택)</span></div>
+      <div class="card-body p-2">
+        <div class="dz" id="dz-t" onclick="g('inp-t').click()">
+          S00026/27/28/22 업로드양식.xlsx<br><small>파일명에 S000XX 포함</small>
+        </div>
+        <input type="file" id="inp-t" accept=".xlsx" multiple style="display:none" onchange="doTpl(this.files)">
+        <div id="tpl-chips" class="mt-1"></div>
+      </div>
+    </div>
+
+    <!-- PDF 업로드 -->
+    <div class="card">
+      <div class="card-header">📑 PDF 파일</div>
+      <div class="card-body p-2">
+        <div class="dz" id="dz-p" onclick="g('inp-p').click()">
+          사업방법서 PDF 업로드<br><small>복수 선택 / 드래그</small>
+        </div>
+        <input type="file" id="inp-p" accept=".pdf" multiple style="display:none" onchange="doPdf(this.files)">
+        <input type="file" id="inp-folder" webkitdirectory accept=".pdf" multiple style="display:none" onchange="doPdf(this.files)">
+        <button class="btn btn-outline-secondary btn-sm w-100 mt-1" onclick="g('inp-folder').click()" style="font-size:12px">
+          📁 폴더 전체 선택 (Edge/Chrome)
+        </button>
+        <div id="pdf-chips" class="mt-1"></div>
+      </div>
+    </div>
+
+    <!-- 테이블 선택 + 시작 -->
+    <div class="card">
+      <div class="card-header">✅ 추출 테이블 선택</div>
+      <div class="card-body p-2">
+        <div class="row g-1 mb-2">
+          <div class="col-6"><div class="form-check">
+            <input class="form-check-input" type="checkbox" id="c26" checked>
+            <label class="form-check-label" for="c26">S00026 가입가능나이</label>
+          </div></div>
+          <div class="col-6"><div class="form-check">
+            <input class="form-check-input" type="checkbox" id="c27" checked>
+            <label class="form-check-label" for="c27">S00027 보기납기</label>
+          </div></div>
+          <div class="col-6"><div class="form-check">
+            <input class="form-check-input" type="checkbox" id="c28" checked>
+            <label class="form-check-label" for="c28">S00028 납입주기</label>
+          </div></div>
+          <div class="col-6"><div class="form-check">
+            <input class="form-check-input" type="checkbox" id="c22" checked>
+            <label class="form-check-label" for="c22">S00022 보기개시나이</label>
+          </div></div>
+        </div>
+        <button class="btn btn-primary btn-sm w-100" id="btn-start" disabled onclick="doStart()">▶ 추출 시작</button>
+        <button class="btn btn-outline-success btn-sm w-100 mt-1" id="btn-zip" style="display:none" onclick="dlAll()">⬇ 전체 ZIP 다운로드</button>
+      </div>
+    </div>
+
+  </div><!-- /col-left -->
+
+  <!-- 우측 패널 -->
+  <div class="col-md-8 d-flex flex-column gap-2">
+
+    <!-- 결과 테이블 -->
+    <div class="card">
+      <div class="card-header">처리 현황</div>
+      <div class="card-body p-0" style="overflow-x:auto">
+        <table class="table table-sm table-hover mb-0" id="result-tbl">
+          <thead class="table-light">
+            <tr>
+              <th style="min-width:140px">파일명</th>
+              <th>S26</th><th>S27</th><th>S28</th><th>S22</th>
+              <th style="min-width:210px">진행 상태</th>
+              <th>다운로드</th>
+            </tr>
+          </thead>
+          <tbody id="result-tbody">
+            <tr><td colspan="7" class="text-center text-muted py-3">PDF 파일을 업로드하세요</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 미리보기 패널 -->
+    <div class="card" id="prev-panel" style="display:none">
+      <div class="card-header d-flex justify-content-between align-items-center gap-2">
+        <span id="prev-title" class="text-truncate fw-normal" style="max-width:260px"></span>
+        <div class="d-flex align-items-center gap-2 flex-shrink-0">
+          <!-- GT 범례 -->
+          <div id="gt-legend" style="display:none; font-size:11px" class="d-flex gap-2 align-items-center">
+            <span><span class="legend-dot" style="background:var(--c-match)"></span>일치</span>
+            <span><span class="legend-dot" style="background:var(--c-new)"></span>신규</span>
+            <span><span class="legend-dot" style="background:var(--c-missing)"></span>누락(GT)</span>
+          </div>
+          <select class="form-select form-select-sm" id="prev-tbl" onchange="loadPrev()" style="width:185px">
+            <option value="S00026">S00026 가입가능나이</option>
+            <option value="S00027">S00027 보기납기</option>
+            <option value="S00028">S00028 납입주기</option>
+            <option value="S00022">S00022 보기개시나이</option>
+          </select>
+          <div id="gt-summary-badge"></div>
+          <button class="btn btn-outline-success btn-sm" onclick="dlPrev()">xlsx ⬇</button>
+        </div>
+      </div>
+      <div class="row g-0" style="min-height:200px">
+        <div class="col-md-5 border-end">
+          <div class="p-2">
+            <div class="text-muted small mb-1">📄 추출 근거 텍스트 (키워드 하이라이트)</div>
+            <div id="prev-text" class="prev-txt">파일 행을 클릭하세요.</div>
+          </div>
+        </div>
+        <div class="col-md-7">
+          <div class="p-2">
+            <div class="text-muted small mb-1">📊 추출 결과 테이블</div>
+            <div id="prev-grid" style="overflow:auto; max-height:300px">
+              <div class="text-muted p-2">파일 행을 클릭하세요.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /col-right -->
+</div><!-- /row -->
+</div><!-- /container -->
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ── 헬퍼 ─────────────────────────────────────────────────────────────────────
+const g = id => document.getElementById(id);
+
+// ── 키워드 하이라이팅 ─────────────────────────────────────────────────────────
+const KW = {
+  S00026:['가입나이','가입가능나이','피보험자','최저나이','최고나이','만나이','남자','여자','남녀'],
+  S00027:['보험기간','납입기간','보기납기','만기','종신','년납','전기납','일시납'],
+  S00028:['납입주기','납입방법','월납','분기납','반기납','연납','일시납'],
+  S00022:['개시나이','연금개시','보험개시','개시연령','보기개시'],
+};
+function hilight(text, tbl) {
+  if (!text) return '';
+  let s = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  for (const kw of (KW[tbl]||[])) {
+    s = s.replace(new RegExp(kw,'g'), `<mark>${kw}</mark>`);
+  }
+  return s;
+}
+
+// ── 전역 상태 ─────────────────────────────────────────────────────────────────
+let JOB = null;
+let EVT = null;
+let T0  = null;
+let TI  = null;
+let SEL = null;   // 선택된 PDF 이름
+
+const pdfs    = [];
+const st      = {};   // {name: {status,step,pct,steps_done,table_counts,xlsx_files,gt_summaries,error}}
+const results = {};   // {name: full /api/result data}
+const gtLoaded = {};  // {tableType: filename}
+const tplLoaded = {}; // {tableType: filename}
+
+const STEPS = ['STEP1','STEP2','STEP3','STEP4','STEP5','STEP7'];
+const SLBL  = {STEP1:'1.추출',STEP2:'2.매핑',STEP3:'3.룰',STEP4:'4.변환',STEP5:'5.GT비교',STEP7:'7.xlsx'};
+
+// ── Job 초기화 ────────────────────────────────────────────────────────────────
+async function ensureJob() {
+  if (JOB) return;
+  const r = await fetch('/api/upload',{method:'POST'});
+  JOB = (await r.json()).job_id;
+}
+
+// ── 매핑 파일 ─────────────────────────────────────────────────────────────────
+async function doMapping(file) {
+  if (!file) return;
+  await ensureJob();
+  const fd = new FormData(); fd.append('file',file);
+  const r = await fetch(`/api/upload/${JOB}/mapping`,{method:'POST',body:fd});
+  if (r.ok) {
+    g('m-name').textContent = '✓ '+file.name;
+    g('mapping-badge').className='badge bg-success py-1';
+    g('mapping-badge').textContent='매핑 로드됨';
+    g('warning-banner').style.display='none';
+    updStart();
+  }
+}
+
+// ── GT 파일 ───────────────────────────────────────────────────────────────────
+async function doGt(files) {
+  await ensureJob();
+  const fd = new FormData();
+  for (const f of files) fd.append('files',f);
+  const r = await fetch(`/api/upload/${JOB}/gt`,{method:'POST',body:fd});
+  if (r.ok) {
+    const d = await r.json();
+    for (const u of d.uploaded) gtLoaded[u.table_type] = u.file;
+    renderGtChips();
+  }
+}
+function renderGtChips() {
+  g('gt-badges').innerHTML = Object.keys(gtLoaded).map(t=>
+    `<span class="badge bg-warning text-dark me-1">${t} GT</span>`).join('');
+  g('gt-chips').innerHTML = Object.entries(gtLoaded).map(([t,f])=>
+    `<div class="chip"><span>${t}: ${f}</span></div>`).join('');
+}
+
+// ── 템플릿 파일 ──────────────────────────────────────────────────────────────
+async function doTpl(files) {
+  await ensureJob();
+  for (const file of files) {
+    const fd = new FormData(); fd.append('file',file);
+    const r = await fetch(`/api/upload/${JOB}/template`,{method:'POST',body:fd});
+    if (r.ok) { const d=await r.json(); tplLoaded[d.table_type]=file.name; }
+    else { const e=await r.json(); alert('템플릿 오류: '+(e.detail||'알 수 없음')); }
+  }
+  g('tpl-badges').innerHTML = Object.keys(tplLoaded).map(t=>
+    `<span class="badge bg-info text-dark me-1">${t}</span>`).join('');
+  g('tpl-chips').innerHTML = Object.entries(tplLoaded).map(([t,f])=>
+    `<div class="chip"><span>${t}: ${f}</span></div>`).join('');
+}
+
+// ── PDF 파일 ──────────────────────────────────────────────────────────────────
+async function doPdf(files) {
+  if (!files.length) return;
+  await ensureJob();
+  const pdfOnly = [...files].filter(f=>f.name.toLowerCase().endsWith('.pdf'));
+  if (!pdfOnly.length) { alert('PDF 파일이 없습니다.'); return; }
+  const fd = new FormData(); pdfOnly.forEach(f=>fd.append('files',f));
+  const r = await fetch(`/api/upload/${JOB}/pdf`,{method:'POST',body:fd});
+  if (r.ok) {
+    const d = await r.json();
+    for (const name of d.uploaded) {
+      if (!pdfs.find(p=>p.name===name)) {
+        pdfs.push({name});
+        st[name]={status:'pending',step:'',pct:0,steps_done:[],table_counts:{},xlsx_files:{},gt_summaries:{},error:null};
+      }
+    }
+    renderChips(); renderTable(); updStart();
+  }
+}
+function renderChips() {
+  g('pdf-chips').innerHTML = pdfs.map(p=>
+    `<div class="chip"><span>${p.name}</span><span class="rm" onclick="rmPdf('${p.name}')">×</span></div>`
+  ).join('');
+}
+async function rmPdf(name) {
+  await fetch(`/api/upload/${JOB}/pdf/${encodeURIComponent(name)}`,{method:'DELETE'});
+  pdfs.splice(pdfs.findIndex(p=>p.name===name),1);
+  delete st[name];
+  if (SEL===name){SEL=null; g('prev-panel').style.display='none';}
+  renderChips(); renderTable(); updStart();
+}
+
+// ── 결과 테이블 렌더 ─────────────────────────────────────────────────────────
+function stepBadges(name) {
+  const s = st[name]||{};
+  return STEPS.map(step=>{
+    let cls='';
+    if ((s.steps_done||[]).includes(step)) cls='done';
+    else if (s.step===step) cls=(s.status==='error'?'error':'active');
+    return `<span class="sb ${cls}">${SLBL[step]}</span>`;
+  }).join('');
+}
+
+function statusBadge(name) {
+  const s = st[name]||{};
+  switch(s.status) {
+    case 'done':       return '<span class="badge bg-success">✅ PASS</span>';
+    case 'fail':       return '<span class="badge bg-danger">❌ FAIL</span>';
+    case 'new':        return '<span class="badge bg-info text-dark">신규</span>';
+    case 'error':      return `<span class="badge bg-danger" title="${s.error||''}">오류</span>`;
+    case 'processing': return `<span class="badge bg-warning text-dark">처리중 ${s.pct||0}%</span>`;
+    default:           return '<span class="badge bg-secondary">대기</span>';
+  }
+}
+
+function gtCountCell(name, tbl) {
+  const s = st[name]||{};
+  const tc = (s.table_counts||{})[tbl];
+  const gs = (s.gt_summaries||{})[tbl];
+  if (tc === undefined) return '-';
+  if (!gs) return `${tc}건`;
+  const pass = gs.pass;
+  const cls = pass ? 'text-success' : 'text-danger';
+  return `<span class="${cls}">${tc}건</span><br><small class="text-muted">${gs.match}✓${gs.missing>0?' '+gs.missing+'❌':''}</small>`;
+}
+
+function xlsxLinks(name) {
+  const s = st[name]||{};
+  return Object.entries(s.xlsx_files||{}).map(([t,f])=>
+    `<a href="/api/download/${JOB}/${encodeURIComponent(f)}" class="btn btn-outline-success py-0 px-1 me-1" style="font-size:11px">${t}</a>`
+  ).join('');
+}
+
+function renderTable() {
+  const tbody = g('result-tbody');
+  if (!pdfs.length) {
+    tbody.innerHTML='<tr><td colspan="7" class="text-center text-muted py-3">PDF 파일을 업로드하세요</td></tr>';
+    return;
+  }
+  tbody.innerHTML = pdfs.map(p=>{
+    const name = p.name;
+    const s = st[name]||{};
+    const rowCls = {done:'r-done',fail:'r-fail',new:'r-new',error:''}[s.status]||'';
+    const selCls = SEL===name?' r-sel':'';
+    const short = name.length>28?name.slice(0,25)+'...':name;
+    return `<tr class="${rowCls}${selCls}" onclick="selPdf('${name}')" style="cursor:pointer">
+      <td title="${name}">${short}</td>
+      <td>${gtCountCell(name,'S00026')}</td>
+      <td>${gtCountCell(name,'S00027')}</td>
+      <td>${gtCountCell(name,'S00028')}</td>
+      <td>${gtCountCell(name,'S00022')}</td>
+      <td>
+        ${statusBadge(name)}
+        <div class="mt-1">${stepBadges(name)}</div>
+        ${s.status==='processing'?`<div class="progress mt-1"><div class="progress-bar" style="width:${s.pct}%"></div></div>`:''}
+      </td>
+      <td>${xlsxLinks(name)}</td>
+    </tr>`;
+  }).join('');
+
+  // 요약 카드 갱신
+  const vs = Object.values(st);
+  g('s-total').textContent = pdfs.length;
+  g('s-done').textContent  = vs.filter(s=>s.status==='done').length;
+  g('s-fail').textContent  = vs.filter(s=>s.status==='fail').length;
+  g('s-new').textContent   = vs.filter(s=>s.status==='new').length;
+  g('s-error').textContent = vs.filter(s=>s.status==='error').length;
+  g('s-proc').textContent  = vs.filter(s=>s.status==='processing').length;
+}
+
+// ── 처리 시작 ────────────────────────────────────────────────────────────────
+function getTables() {
+  return [['c26','S00026'],['c27','S00027'],['c28','S00028'],['c22','S00022']]
+    .filter(([id])=>g(id).checked).map(([,t])=>t);
+}
+async function doStart() {
+  const tables = getTables();
+  if (!tables.length){alert('테이블을 하나 이상 선택하세요.');return;}
+  g('btn-start').disabled=true; g('btn-zip').style.display='none';
+
+  if (EVT) EVT.close();
+  EVT = new EventSource(`/api/progress/${JOB}`);
+  EVT.onmessage=onSSE; EVT.onerror=()=>EVT.close();
+
+  T0=Date.now(); startTimer();
+  const r = await fetch('/api/process',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({job_id:JOB,selected_tables:tables})
+  });
+  if (!r.ok){
+    const e=await r.json(); alert('오류: '+(e.detail||'처리 실패'));
+    g('btn-start').disabled=false; stopTimer();
+  }
+}
+
+// ── SSE 핸들러 ───────────────────────────────────────────────────────────────
+function onSSE(e) {
+  let ev; try{ev=JSON.parse(e.data);}catch{return;}
+
+  if (ev.file) {
+    const name=ev.file;
+    if (!st[name]) st[name]={status:'pending',step:'',pct:0,steps_done:[],table_counts:{},xlsx_files:{},gt_summaries:{},error:null};
+    const s=st[name];
+    s.pct=ev.pct||s.pct; s.step=ev.step;
+
+    if (ev.step==='DONE'){
+      s.status='done'; s.steps_done=[...STEPS];
+    } else if (ev.step==='ERROR'){
+      s.status='error'; s.error=ev.msg;
+    } else if (STEPS.includes(ev.step)){
+      s.status='processing';
+      s.steps_done=STEPS.slice(0,STEPS.indexOf(ev.step));
+    }
+    renderTable();
+  }
+
+  if (ev.type==='ALL_DONE'||ev.type==='END'){
+    EVT.close(); stopTimer();
+    g('btn-start').disabled=false;
+    g('btn-zip').style.display='';
+    fetchResults();
+  }
+  if (ev.type==='ERROR'){EVT.close();stopTimer();g('btn-start').disabled=false;}
+}
+
+async function fetchResults() {
+  const r = await fetch(`/api/result/${JOB}`);
+  if (!r.ok) return;
+  const data = await r.json();
+  for (const [name,res] of Object.entries(data.pdf_results)) {
+    results[name]=res;
+    const s=st[name]||{};
+    s.status=res.status;
+    s.table_counts=res.table_counts||{};
+    s.xlsx_files=res.xlsx_files||{};
+    s.gt_summaries=res.gt_summaries||{};
+    s.error=res.error;
+    s.steps_done=[...STEPS];
+    st[name]=s;
+  }
+  renderTable();
+}
+
+// ── 미리보기 ─────────────────────────────────────────────────────────────────
+function selPdf(name) {
+  SEL=name;
+  g('prev-panel').style.display='';
+  g('prev-title').textContent=name;
+  loadPrev(); renderTable();
+}
+
+async function loadPrev() {
+  if (!SEL) return;
+  const tbl=g('prev-tbl').value;
+  const r=await fetch(`/api/result/${JOB}/${encodeURIComponent(SEL)}/${tbl}`);
+  if (!r.ok){
+    g('prev-text').innerHTML='<span class="text-muted">결과 없음</span>';
+    g('prev-grid').innerHTML='<div class="text-muted p-2">추출된 데이터 없음</div>';
+    g('gt-legend').style.display='none';
+    g('gt-summary-badge').innerHTML='';
+    return;
+  }
+  const data=await r.json();
+
+  // 근거 텍스트
+  g('prev-text').innerHTML=hilight(data.text_snippet||'',tbl);
+
+  // GT 범례 + 요약 뱃지
+  if (data.has_gt && data.gt_summary) {
+    g('gt-legend').style.display='';
+    const gs=data.gt_summary;
+    const cls=gs.pass?'bg-success':'bg-danger';
+    g('gt-summary-badge').innerHTML=
+      `<span class="badge ${cls}">${gs.pass?'PASS':'FAIL'}</span> `+
+      `<small class="text-muted">${gs.match}일치 ${gs.new}신규 ${gs.missing}누락</small>`;
+  } else {
+    g('gt-legend').style.display='none';
+    g('gt-summary-badge').innerHTML='';
+  }
+
+  renderGrid(data);
+}
+
+function renderGrid(data) {
+  const el=g('prev-grid');
+  if (!data.rows||!data.rows.length){
+    el.innerHTML='<div class="text-muted p-2">추출된 데이터 없음</div>';
+    return;
+  }
+  const headers=data.headers||[];
+  let html=`<table class="table table-sm table-bordered mb-0" style="font-size:12px">
+    <thead class="table-light sticky-top"><tr>
+      <th>sub_type</th>${headers.map(h=>`<th>${h}</th>`).join('')}
+      ${data.has_gt?'<th>GT</th>':''}<th>⚠</th>
+    </tr></thead><tbody>`;
+
+  for (const row of data.rows) {
+    const gs = row._gt_status;
+    const rowCls = {match:'gt-match',new:'gt-new',missing:'gt-missing'}[gs]||'';
+    const hasErr=!!row._convert_error;
+    const hasWarn=row._warnings&&row._warnings.length>0;
+    const errCls=!gs&&hasErr?'table-danger':!gs&&hasWarn?'table-warning':'';
+    html+=`<tr class="${rowCls||errCls}">
+      <td>${row.sub_type||''}</td>
+      ${headers.map(h=>`<td>${row[h]??''}</td>`).join('')}
+      ${data.has_gt?`<td>${{match:'✅',new:'➕',missing:'❌'}[gs]||''}</td>`:''}
+      <td title="${row._convert_error||''}">${hasErr?'⚠️':hasWarn?'⚠':''}</td>
+    </tr>`;
+  }
+  html+='</tbody></table>';
+
+  // 누락 행 수 안내
+  if (data.missing_count>0) {
+    html+=`<div class="p-2 small text-muted">
+      <span class="legend-dot" style="background:var(--c-missing)"></span>
+      노란색: GT에는 있으나 추출 안 된 행 (${data.missing_count}건)
+    </div>`;
+  }
+  el.innerHTML=html;
+}
+
+// ── 다운로드 ─────────────────────────────────────────────────────────────────
+function dlPrev() {
+  if (!SEL) return;
+  const tbl=g('prev-tbl').value;
+  const fname=(st[SEL]?.xlsx_files||{})[tbl];
+  if (fname) window.location.href=`/api/download/${JOB}/${encodeURIComponent(fname)}`;
+  else alert('해당 xlsx 파일이 없습니다.');
+}
+function dlAll() { if(JOB) window.location.href=`/api/download/${JOB}/all.zip`; }
+
+// ── 타이머 ───────────────────────────────────────────────────────────────────
+function startTimer(){ TI=setInterval(()=>{
+  const s=Math.floor((Date.now()-T0)/1000);
+  g('elapsed').textContent=`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+},1000);}
+function stopTimer(){ if(TI){clearInterval(TI);TI=null;} }
+
+// ── 버튼 활성화 ──────────────────────────────────────────────────────────────
+function updStart(){
+  const mOk=g('mapping-badge').classList.contains('bg-success');
+  const pOk=pdfs.length>0;
+  g('btn-start').disabled=!(mOk&&pOk);
+  if (!mOk) g('warning-banner').style.display='';
+}
+
+// ── 드래그&드롭 ──────────────────────────────────────────────────────────────
+function setDrop(id,ext,fn){
+  const z=g(id);
+  z.addEventListener('dragover',e=>{e.preventDefault();z.classList.add('over');});
+  z.addEventListener('dragleave',()=>z.classList.remove('over'));
+  z.addEventListener('drop',e=>{
+    e.preventDefault(); z.classList.remove('over');
+    const files=[...e.dataTransfer.files].filter(f=>f.name.toLowerCase().endsWith(ext));
+    if(files.length) fn(files);
+  });
+}
+setDrop('dz-m', '.xlsx', f=>doMapping(f[0]));
+setDrop('dz-gt','.xlsx', f=>doGt(f));
+setDrop('dz-t', '.xlsx', f=>doTpl(f));
+setDrop('dz-p', '.pdf',  f=>doPdf(f));
+
+updStart();
+</script>
+</body>
+</html>
